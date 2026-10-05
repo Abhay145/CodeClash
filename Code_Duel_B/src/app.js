@@ -1,0 +1,80 @@
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+
+// Initializing Firebase Admin SDK early
+const { db } = require("./config/firebase");
+
+const app = express();
+
+// Configure CORS
+const configuredOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",")
+  : [];
+const corsOrigins = [
+  "http://localhost:5173",
+  "https://code-duel-f.vercel.app",
+  "https://cod3duel.netlify.app",
+  ...configuredOrigins
+];
+
+const corsOptions = {
+  origin: corsOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+// Handle OPTIONS preflight for all routes — cors() handles this automatically
+app.use(cors(corsOptions));
+
+// Body Parser
+app.use(express.json());
+
+// Basic Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+// Health check endpoint verifying Firebase connectivity
+app.get("/health", async (req, res) => {
+  try {
+    // Simple doc read to verify Firestore connectivity
+    // (listCollections() requires elevated IAM and often fails with NOT_FOUND)
+    await db.collection("problem_testcases").limit(1).get();
+    res.status(200).json({
+      status: "UP",
+      firebase: "CONNECTED",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Health check Firestore error:", error.message);
+    res.status(500).json({
+      status: "DOWN",
+      firebase: "ERROR",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// ── API Routes ──
+const problemsRouter     = require("./routes/problems");
+const usersRouter        = require("./routes/users");
+const submissionsRouter  = require("./routes/submissions");
+const roomsRouter        = require("./routes/rooms");
+const matchesRouter      = require("./routes/matches");
+
+app.use("/api/problems",     problemsRouter);
+app.use("/api/users",        usersRouter);
+app.use("/api/submissions",  submissionsRouter);
+app.use("/api/rooms",        roomsRouter);
+app.use("/api/matches",      matchesRouter);
+
+// Fallback Route
+app.use((req, res) => {
+  res.status(404).json({ error: "Route not found" });
+});
+
+module.exports = app;
